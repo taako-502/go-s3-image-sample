@@ -60,7 +60,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		Bucket: aws.String(bucket),
 		Key:    aws.String(header.Filename),
 		Body:   file,
-		ACL:    aws.String("public-read"),
 	})
 	if err != nil {
 		log.Printf("Failed to upload file to S3: %v", err)
