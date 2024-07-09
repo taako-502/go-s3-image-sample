@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -13,58 +14,74 @@ import (
 
 var templates = template.Must(template.ParseFiles("templates/upload.html"))
 
-const (
-    S3_REGION = "us-west-2" // 変更が必要
-    S3_BUCKET = "your-bucket-name" // 変更が必要
-)
-
 func main() {
-    http.HandleFunc("/", uploadFormHandler)
-    http.HandleFunc("/upload", uploadHandler)
-    log.Println("Server started on :8080")
-    log.Fatal(http.ListenAndServe(":8080", nil))
+	http.HandleFunc("/", uploadFormHandler)
+	http.HandleFunc("/upload", uploadHandler)
+	log.Println("Server started on :8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 func uploadFormHandler(w http.ResponseWriter, r *http.Request) {
-    if err := templates.ExecuteTemplate(w, "upload.html", nil); err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-    }
+	renderTemplate(w, "upload.html", nil)
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodPost {
+		log.Println("Invalid request method")
+		renderTemplate(w, "upload.html", "Invalid request method")
+		return
+	}
 
-    file, header, err := r.FormFile("image")
-    if err != nil {
-        http.Error(w, "Failed to read file", http.StatusBadRequest)
-        return
-    }
-    defer file.Close()
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		log.Printf("Failed to read file: %v", err)
+		renderTemplate(w, "upload.html", fmt.Sprintf("Failed to read file: %v", err))
+		return
+	}
+	defer file.Close()
 
-    sess, err := session.NewSession(&aws.Config{
-        Region: aws.String(S3_REGION)},
-    )
-    if err != nil {
-        http.Error(w, "Failed to create AWS session", http.StatusInternalServerError)
-        return
-    }
+	region := os.Getenv("AWS_REGION")
+	bucket := os.Getenv("S3_BUCKET")
 
-    uploader := s3.New(sess)
+	log.Printf("AWS_REGION: %s, S3_BUCKET: %s", region, bucket)
 
-    _, err = uploader.PutObject(&s3.PutObjectInput{
-        Bucket: aws.String(S3_BUCKET),
-        Key:    aws.String(header.Filename),
-        Body:   file,
-        ACL:    aws.String("public-read"),
-    })
-    if err != nil {
-        http.Error(w, "Failed to upload file to S3", http.StatusInternalServerError)
-        return
-    }
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String(region)},
+	)
+	if err != nil {
+		log.Printf("Failed to create AWS session: %v", err)
+		renderTemplate(w, "upload.html", fmt.Sprintf("Failed to create AWS session: %v", err))
+		return
+	}
 
-    url := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", S3_BUCKET, S3_REGION, header.Filename)
-    fmt.Fprintf(w, "Successfully uploaded file to S3: %s\n", url)
+	uploader := s3.New(sess)
+
+	_, err = uploader.PutObject(&s3.PutObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(header.Filename),
+		Body:   file,
+		ACL:    aws.String("public-read"),
+	})
+	if err != nil {
+		log.Printf("Failed to upload file to S3: %v", err)
+		renderTemplate(w, "upload.html", fmt.Sprintf("Failed to upload file to S3: %v", err))
+		return
+	}
+
+	url := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", bucket, region, header.Filename)
+	log.Printf("Successfully uploaded file to S3: %s", url)
+	renderTemplate(w, "upload.html", fmt.Sprintf("Successfully uploaded file to S3: %s", url))
+}
+
+func renderTemplate(w http.ResponseWriter, tmpl string, message interface{}) {
+	data := struct {
+		Message interface{}
+	}{
+		Message: message,
+	}
+
+	if err := templates.ExecuteTemplate(w, tmpl, data); err != nil {
+		log.Printf("Failed to render template: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
