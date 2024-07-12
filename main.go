@@ -41,9 +41,9 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	region := os.Getenv("AWS_REGION")
-	bucket := os.Getenv("S3_BUCKET")
+	bucket := os.Getenv("AWS_S3_BUCKET")
 
-	log.Printf("AWS_REGION: %s, S3_BUCKET: %s", region, bucket)
+	log.Printf("AWS_REGION: %s, AWS_S3_BUCKET: %s", region, bucket)
 
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(region)},
